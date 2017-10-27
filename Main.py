@@ -3,15 +3,14 @@ import numpy as np
 import pandas as pd
 import Models
 from keras.callbacks import ModelCheckpoint
-from sklearn.model_selection import train_test_split
-from sklearn.utils import shuffle
+from sklearn.model_selection import KFold
 
 np.random.seed(2017)
 img_rows = 75
 img_cols = 75
 color_type = 3
 batch_size = 128
-nb_epoch = 200
+nb_epoch = 150
 split = 0.2
 
 path = '../Statoil/'
@@ -38,32 +37,35 @@ X_test = load_data(Test_data)
 print("Total Xtest:", X_test.shape)
 print "\n"
 i = 0
-while(i < 5):
-    print "Fold number : ", i+1
-    X_train, X_validate, y_train, y_validate = train_test_split(Train, Target_train, test_size=split,
-                                                                                random_state=i)
+kf = KFold(n_splits=5, shuffle=True)
+for train_index, test_index in kf.split(Train):
+    X_train, X_validation = Train[train_index], Train[test_index]
+    y_train, y_validation = Target_train[train_index], Target_train[test_index]
     print "X_train : ", X_train.shape
-    print "X_validate : ", X_validate.shape
+    print "X_validate : ", X_validation.shape
+    print "Non_Iceberg image examples for training : ", len(y_train) - np.count_nonzero(y_train)
+    print "Iceberg image examples for training: ", np.count_nonzero(y_train)
+    print "Non_Iceberg image examples for validation : ", len(y_validation) - np.count_nonzero(y_validation)
+    print "Iceberg image examples for validation: ", np.count_nonzero(y_validation)
     model = Models.CNN_NCouches(img_rows, img_cols, color_type)
-    checkpointer = ModelCheckpoint(filepath="./Weights/weightsOil"+str(i+1)+".hdf5", verbose=1, save_best_only=True)
+    checkpointer = ModelCheckpoint(filepath="./Weights/weightsOil" + str(i + 1) + ".hdf5", verbose=1,
+                                   save_best_only=True)
     model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epoch,
               verbose=1, validation_split=0.2, shuffle=True, callbacks=[checkpointer])
-
-
-    # Make predictions
+    model.load_weights(filepath="./Weights/weightsOil" + str(i + 1)+".hdf5")    # Make predictions
     prediction = model.predict(X_test, verbose=1)
     Results.append(prediction.flatten())
     print "\n"
-    evaluation.append(model.evaluate(X_validate, y_validate))
+    evaluation.append(model.evaluate(X_validation, y_validation))
     print(evaluation[i])
     print "\n"
     i += 1
 
 print "\n"
-print "loss : ", (evaluation[0][0] + evaluation[1][0] + evaluation[2][0] + evaluation[3][0] + evaluation[4][0])/5
-print "Accuracy : ", (evaluation[0][1] + evaluation[1][1] + evaluation[2][1] + evaluation[3][1] + evaluation[4][1])/5
+print "Mean loss : ", (evaluation[0][0] + evaluation[1][0] + evaluation[2][0] + evaluation[3][0] + evaluation[4][0])/5
+print "Mean Accuracy : ", (evaluation[0][1] + evaluation[1][1] + evaluation[2][1] + evaluation[3][1] + evaluation[4][1])/5
 Results = np.asarray(Results)
-prediction = (Results[0] + Results[1] +  Results[2] +  Results[3] + Results[4])
+prediction = (Results[0] + Results[1] +  Results[2] +  Results[3] + Results[4]) / 5
 
 submit_Statoil = pd.DataFrame({'id': Test_data["id"], 'is_iceberg': prediction.flatten()})
 submit_Statoil.to_csv("./submission/statoil_KFoldMergeWithChannel.csv", index=False)
